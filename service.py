@@ -2,14 +2,39 @@
 from __future__ import print_function
 print('Maily Service!')
 import email
-import boto3
 import settings
+
+boto = [None]
+
+class FakeBoto:
+    def client(self, ignore):
+        return FakeClient()
+
+class FakeClient:
+    def send_raw_email(self, Source, Destinations, RawMessage):
+        print('Sent fake raw email')
+    def get_object(self, Bucket, Key):
+        return {'Body':FakeObject()}
+        
+class FakeObject:
+    def read(self):
+        with open('email.txt', 'r') as email:
+            return email.read()
+            
+def fakeboto():
+    print('Fake!')
+    boto[0] = FakeBoto()
 
 def parse(event):
     print('Parsing email')
     if not 'Records' in event or len(event['Records']) != 1:
         raise Exception('Invalid SES message (invalid records)')
     record = event['Records'][0]
+    if 'fakeMessage' in record:
+        fakeboto()
+    else:
+        import boto3
+        boto[0] = boto3
     if not 'eventSource' in record or record['eventSource'] != 'aws:ses':
         raise Exception('Invalid SES message (invalid source)')
     mail, recipients = record['ses']['mail'], record['ses']['receipt']['recipients']
@@ -46,7 +71,7 @@ def forwards(recipients):
     
 def fetch(mail, originals):
     print('Fetching email')
-    s3 = boto3.client('s3')
+    s3 = boto[0].client('s3')
     bucketkey = originals[0].split('@')[-1].split('.')[-2]
     id = settings.BUCKET_ID.format(bucketkey, mail['messageId'])
     raw = None
@@ -78,7 +103,7 @@ def modify(raw, newfrom):
     
 def sendraw(raw, newfrom, destinations):
     print('Sending raw email')
-    ses = boto3.client('ses')
+    ses = boto[0].client('ses')
     ses.send_raw_email(Source=newfrom, Destinations=destinations, RawMessage={'Data':raw.encode('utf-8')})
 
 def handler(event, context):
